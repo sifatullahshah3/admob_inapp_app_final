@@ -60,6 +60,14 @@ class ScreenPremiumSubscriptionState extends State<ScreenPremiumSubscription>
         currentProductIds.isNotEmpty ? currentProductIds.elementAt(0) : '';
   }
 
+  @override
+  void dispose() {
+    super.dispose();
+    MyAppState().updateValue(false); // enable open ads after 30 sec
+    _purchaseStreamSubscription.cancel(); // Cancel the subscription stream
+    WidgetsBinding.instance.removeObserver(this);
+  }
+
   // Listen to app lifecycle changes (e.g., app resumes from background)
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -404,14 +412,6 @@ class ScreenPremiumSubscriptionState extends State<ScreenPremiumSubscription>
     setState(() {
       selectedProductId = id;
     });
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-    MyAppState().updateValue(false); // enable open ads after 30 sec
-    _purchaseStreamSubscription.cancel(); // Cancel the subscription stream
-    WidgetsBinding.instance.removeObserver(this);
   }
 
   @override
