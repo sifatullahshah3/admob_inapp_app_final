@@ -44,7 +44,7 @@ class AdmobManager {
     "appOpen": "",
   };
 
-  //
+  //new
   //================ Real IOS Ids ================================================
 
   static Map<String, String> get _ids => _testIds;
