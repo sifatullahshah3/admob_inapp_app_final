@@ -1,7 +1,25 @@
 import 'dart:io';
 
+import 'package:admob_inapp_app/in_app_purchase/constant_inapps.dart';
 import 'package:admob_inapp_app/utilities/constants.dart';
 import 'package:flutter/material.dart';
+
+//=============================================================
+
+//todo change according to your app
+const String iosSharedSecret = '280b49b482dc4103812bc6eaa2ec39ef';
+
+//todo change according to your app
+final List<String> productidsIOS = [
+  'test_app_weekly',
+  'test_app_monthly',
+  'test_app_yearly',
+];
+
+//todo change according to your app
+final List<String> productidsAndroid = ['', '', '', ''];
+
+//=============================================================
 
 const String subscriptionInfo =
     '''• Your payment will be charged to your iTunes Account as soon as you confirm your purchase.\n
@@ -15,26 +33,23 @@ const subscriptionLink =
     "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
 const String termOfUse = 'Term of Use';
 
-const String iosSharedSecret = '280b49b482dc4103812bc6eaa2ec39ef';
-
-final List<String> productidsIOS = [
-  'test_app_weekly',
-  'test_app_monthly',
-  'test_app_yearly',
-];
-
-final List<String> productidsAndroid = ['', '', '', ''];
-
 List<String> get currentProductIds =>
     Platform.isIOS ? productidsIOS : productidsAndroid;
 
 Widget getSubscriptionInfoView() {
-  return Platform.isIOS
-      ? const Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 10),
-        child: Text(subscriptionInfo, textAlign: TextAlign.justify),
-      )
-      : const SizedBox();
+  return const Padding(
+    padding: const EdgeInsets.symmetric(
+      horizontal: InAppConstants.defaultPadding * 1.5,
+    ),
+    child: Text(
+      subscriptionInfo,
+      style: const TextStyle(
+        fontSize: 14,
+        color: InAppConstants.textColorBlack,
+        height: 1.5,
+      ),
+    ),
+  );
 }
 
 Widget getTermConditionView(context) {

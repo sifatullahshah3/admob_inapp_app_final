@@ -1,152 +1,165 @@
 // lib/services/receipt_verifier_service.dart (or similar path)
+import 'dart:async';
+
 import 'package:admob_inapp_app/data/database_box.dart';
 import 'package:admob_inapp_app/data/databases.dart';
 import 'package:admob_inapp_app/in_app_purchase/inapp_utils.dart';
 import 'package:admob_inapp_app/in_app_purchase/model_receipt_verification.dart';
 import 'package:admob_inapp_app/in_app_purchase/service_invoices.dart';
 import 'package:admob_inapp_app/utilities/constants.dart';
-import 'package:flutter/foundation.dart'; // For kDebugMode
+import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
 class ReceiptVerifierService {
-  static Future<void> verifyIosReceipt({
-    required String verificationData,
-    required String fromSCR,
-  }) async {
-    var receiptBody = {
+  // This is the primary method to call for verification.
+  // It orchestrates the validation and saving process.
+  static Future<bool> verifyAndSavePurchase(String verificationData) async {
+    generalPrintLog("INAPPPurchase", "Starting receipt verification...");
+
+    final receiptBody = {
       'receipt-data': verificationData,
-      'exclude-old-transactions': true,
+      'exclude-old-transactions': false,
       'password': iosSharedSecret,
     };
-    generalPrintLog(
-      "INAPPPurchase",
-      "Attempting client-side verification: ${verificationData.length} from $fromSCR",
-    );
 
-    List<PurchaseDetailsSave> listPurchasedDetails = [];
     try {
-      final response = await ServicesInAppPurchase.validateReceiptIos(
-        receiptBody,
-        kDebugMode,
-      );
+      final responseModel = await _validateWithApple(receiptBody);
 
-      final modelReceiptVerification = modelReceiptVerificationFromJson(
-        response.body,
-      );
-
-      // Apple's status codes: 0 is valid, 21007 is sandbox receipt sent to prod, 21008 is prod receipt sent to sandbox.
-      // This client-side verification only checks against one endpoint (determined by ServicesInAppPurchase.validateReceiptIos).
-      // A robust backend would handle the 21007/21008 switching.
-
-      if (modelReceiptVerification.receipt != null) {
-        generalPrintLog(
-          "INAPPPurchase receipt!.inApp.length",
-          "${modelReceiptVerification.receipt?.inApp.length}",
-        );
-
-        // Find the latest active subscription from the in_app array
-        // Assuming 'in_app' contains all purchases, including historical for non-consumables
-        // and auto-renewing events for subscriptions.
-        // For subscriptions, you typically look at 'latest_receipt_info' if it's available
-        // or parse the 'in_app' array to find the latest active subscription.
-
-        // Let's consider both `inApp` and `latest_receipt_info` if the model supports it.
-        // The provided snippet only uses `modelReceiptVerification.receipt!.inApp`.
-        // If the model has `latest_receipt_info` for subscriptions, it's better to use that.
-        // For now, sticking to the provided snippet's logic using `inApp`.
-
-        // Filter for active subscriptions based on expiresDateMs
-        final activeTransactions =
-            modelReceiptVerification.receipt!.inApp.where((element) {
-              try {
-                DateTime expiresDateMs = DateTime.fromMillisecondsSinceEpoch(
-                  int.parse(
-                    element.expiresDateMs!,
-                  ), // Use null-safe operator if it can be null
-                  isUtc: DateTime.now().isUtc,
-                );
-                return expiresDateMs.isAfter(DateTime.now());
-              } catch (e) {
-                generalPrintLog(
-                  "INAPPPurchase Error parsing expiresDateMs",
-                  "$e for ${element.productId}",
-                );
-                return false;
-              }
-            }).toList();
-
-        for (var element in activeTransactions) {
-          DateTime transactionDate = DateTime.fromMillisecondsSinceEpoch(
-            int.parse(element.purchaseDateMs!), // Use null-safe operator
-            isUtc: DateTime.now().isUtc,
-          );
-
-          listPurchasedDetails.add(
-            PurchaseDetailsSave(
-              purchaseID: element.transactionId,
-              productID: element.productId,
-              // You might need to fetch product title from your _availableSubscriptionPlans
-              // or have it returned by your ServicesInAppPurchase if possible.
-              // For now, it's an empty string as in the original snippet.
-              productTitle: "",
-              verificationData: verificationData, // Store the full receipt used
-              transactionDate: transactionDate,
-              expireDate: DateTime.fromMillisecondsSinceEpoch(
-                int.parse(element.expiresDateMs!),
-                isUtc: DateTime.now().isUtc,
-              ),
-              status: true, // Marked as active
-            ),
-          );
-        }
-
-        if (listPurchasedDetails.isNotEmpty) {
-          // Overwrite the existing list in the database with the newly verified active ones.
-          // This approach assumes the client-side verification provides the complete picture
-          // of current active subscriptions. For a production app, this should be driven
-          // by the backend's authoritative list.
-          DatabaseBox.savePurchaseDetailsSaveList(listPurchasedDetails);
-        } else {
-          // If no active subscriptions are found in the receipt, clear any existing local ones
-          // to ensure the local state accurately reflects no active premium.
-          DatabaseBox.savePurchaseDetailsSaveList([]);
-        }
-
-        generalPrintLog(
-          "INAPPPurchase list_purchased length after verification",
-          listPurchasedDetails.length,
-        );
-        for (var element in listPurchasedDetails) {
-          // Note: Setting verificationData to "asdf" here seems like a debug placeholder.
-          // It's usually better to store the actual verification data or not modify it.
-          element.verificationData = "VerifiedClientSide";
-          generalPrintLog("INAPPPurchase to Map", element.toMap().toString());
-        }
-      } else {
+      if (responseModel == null || responseModel.status != 0) {
         generalPrintLog(
           "INAPPPurchase",
-          "Receipt verification failed: No receipt data or invalid status from Apple.",
+          "Verification failed. Status: ${responseModel?.status}",
         );
-        // If verification failed, clear existing local premium status as a precaution
-        DatabaseBox.savePurchaseDetailsSaveList([]);
+        await DatabaseBox.savePurchaseDetailsSaveList(
+          [],
+        ); // Clear local purchases
+        return false;
+      }
+
+      // *** KEY CHANGE: Prioritize latest_receipt_info for subscriptions ***
+      final transactions =
+          responseModel.latestReceiptInfo.isNotEmpty
+              ? responseModel.latestReceiptInfo
+              : responseModel.receipt?.inApp ?? [];
+
+      if (transactions.isEmpty) {
+        generalPrintLog("INAPPPurchase", "No transactions found in receipt.");
+        await DatabaseBox.savePurchaseDetailsSaveList([]);
+        return false;
+      }
+
+      // Find the single most recent, active transaction
+      LatestReceiptInfo? latestActiveTransaction;
+      for (var transaction in transactions) {
+        try {
+          final expiresDate = DateTime.fromMillisecondsSinceEpoch(
+            int.parse(transaction.expiresDateMs),
+            isUtc: true,
+          );
+          if (expiresDate.isAfter(DateTime.now().toUtc())) {
+            if (latestActiveTransaction == null ||
+                int.parse(transaction.purchaseDateMs) >
+                    int.parse(latestActiveTransaction.purchaseDateMs)) {
+              latestActiveTransaction = transaction;
+            }
+          }
+        } catch (e) {
+          // Ignore transactions with invalid date format
+        }
+      }
+
+      if (latestActiveTransaction != null) {
+        final purchaseDetail = PurchaseDetailsSave(
+          purchaseID: latestActiveTransaction.transactionId,
+          productID: latestActiveTransaction.productId,
+          productTitle: "", // Consider fetching this from your product list
+          verificationData: verificationData, // Store original receipt
+          transactionDate: DateTime.fromMillisecondsSinceEpoch(
+            int.parse(latestActiveTransaction.purchaseDateMs),
+            isUtc: true,
+          ),
+          expireDate: DateTime.fromMillisecondsSinceEpoch(
+            int.parse(latestActiveTransaction.expiresDateMs),
+            isUtc: true,
+          ),
+          status: true,
+        );
+
+        generalPrintLog(
+          "INAPPPurchase",
+          "Successfully verified active subscription: ${purchaseDetail.productID}",
+        );
+        await DatabaseBox.savePurchaseDetailsSaveList([purchaseDetail]);
+        return true;
+      } else {
+        generalPrintLog("INAPPPurchase", "No active subscriptions found.");
+        await DatabaseBox.savePurchaseDetailsSaveList([]);
+        return false;
       }
     } catch (e) {
-      generalPrintLog("INAPPPurchase Verification Error", e.toString());
-      // Handle network errors or parsing errors
-      // In case of error, it's safer to assume no active subscription until re-verified
-      DatabaseBox.savePurchaseDetailsSaveList([]);
+      generalPrintLog("INAPPPurchase", "Verification Error: $e");
+      // Don't clear purchases on network error, as the sub might still be active
+      return false;
     }
   }
 
-  static void callPurchaseStreamFunction(String fromSCR) {
-    bool isPurchaseNotCall = true;
-    InAppPurchase.instance.purchaseStream.listen((event) {
-      if (isPurchaseNotCall) {
-        isPurchaseNotCall = false;
-        String verificationData =
-            event[0].verificationData.localVerificationData;
-        verifyIosReceipt(verificationData: verificationData, fromSCR: fromSCR);
+  // *** NEW: Handles the Production/Sandbox retry logic ***
+  static Future<ModelReceiptVerification?> _validateWithApple(
+    Map<String, dynamic> receiptBody, {
+    bool isRetry = false,
+  }) async {
+    final useSandbox = isRetry; // Use sandbox only on the retry attempt
+    final response = await ServicesInAppPurchase.validateReceiptIos(
+      receiptBody,
+      useSandbox: useSandbox,
+    );
+    final responseModel = modelReceiptVerificationFromJson(response.body);
+
+    // If status is 21007, it's a sandbox receipt. Retry against sandbox ONLY if we haven't already.
+    if (responseModel.status == 21007 && !isRetry) {
+      generalPrintLog(
+        "INAPPPurchase",
+        "Status 21007. Retrying with Sandbox URL...",
+      );
+      return _validateWithApple(receiptBody, isRetry: true);
+    }
+
+    return responseModel;
+  }
+
+  //===== Dashboard Functions Calls ===============
+
+  // Handles new purchases and restorations
+  static void handlePurchaseUpdates(List<PurchaseDetails> purchaseDetailsList) {
+    for (var purchaseDetails in purchaseDetailsList) {
+      if (purchaseDetails.status == PurchaseStatus.purchased ||
+          purchaseDetails.status == PurchaseStatus.restored) {
+        if (purchaseDetails
+            .verificationData
+            .serverVerificationData
+            .isNotEmpty) {
+          verifyAndSavePurchase(
+            purchaseDetails.verificationData.serverVerificationData,
+          );
+        }
       }
-    });
+      if (purchaseDetails.pendingCompletePurchase) {
+        InAppPurchase.instance.completePurchase(purchaseDetails);
+      }
+    }
+  }
+
+  // Checks local storage on app start
+  static Future<void> loadAndVerifyExistingPurchase() async {
+    try {
+      var list = DatabaseBox.getPurchaseDetailsSaveList();
+      if (list.isNotEmpty) {
+        String verificationData = list[0].verificationData;
+        // Re-verify to ensure the subscription hasn't been cancelled
+        await verifyAndSavePurchase(verificationData);
+      }
+    } catch (e) {
+      debugPrint("Failed to load existing purchase: $e");
+    }
   }
 }

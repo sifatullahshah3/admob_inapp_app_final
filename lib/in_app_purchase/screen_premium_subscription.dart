@@ -293,7 +293,7 @@ class ScreenPremiumSubscriptionState extends State<ScreenPremiumSubscription>
       // Save the updated list
       generalPrintLog("INAPPPurchase list length", list.length);
       WidgetsReusing.getMaterialBar(context, "listlistlist ${list.length}");
-      DatabaseBox.savePurchaseDetailsSaveList(list);
+      await DatabaseBox.savePurchaseDetailsSaveList(list);
       _isPurchased = true;
 
       // Re-check premium status after saving new purchase
@@ -566,22 +566,7 @@ class ScreenPremiumSubscriptionState extends State<ScreenPremiumSubscription>
                                       ),
                                     ),
                                     children: <Widget>[
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal:
-                                              InAppConstants.defaultPadding *
-                                              1.5,
-                                        ),
-                                        child: Text(
-                                          subscriptionInfo,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            color:
-                                                InAppConstants.textColorBlack,
-                                            height: 1.5,
-                                          ),
-                                        ),
-                                      ),
+                                      getSubscriptionInfoView(),
                                     ],
                                   ),
                                 ),
@@ -650,14 +635,14 @@ class ScreenPremiumSubscriptionState extends State<ScreenPremiumSubscription>
                     child: GradientButton(
                       text: "Manage",
                       onPressed: () {
-                        // Open platform-specific subscription management page
-                        // Note: These are general URLs. Deep links might vary.
                         if (Platform.isIOS) {
+                          // Use the 'itms-apps' deep link scheme for a direct path
                           Constants.openUrlSite(
                             context,
-                            'https://apps.apple.com/account/subscriptions',
+                            'itms-apps://apps.apple.com/account/subscriptions',
                           );
                         } else if (Platform.isAndroid) {
+                          // This URL is correct for Android
                           Constants.openUrlSite(
                             context,
                             'https://play.google.com/store/account/subscriptions',

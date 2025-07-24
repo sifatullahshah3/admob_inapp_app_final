@@ -26,7 +26,9 @@ class DatabaseBox {
     return purchaseDetailsSavee.values.toList().cast<PurchaseDetailsSave>();
   }
 
-  static void savePurchaseDetailsSaveList(List<PurchaseDetailsSave> list) {
+  static Future<void> savePurchaseDetailsSaveList(
+    List<PurchaseDetailsSave> list,
+  ) async {
     for (var element in list) {
       purchaseDetailsSavee.put(element.productID.toString(), element);
     }
