@@ -36,6 +36,7 @@ class _ScreenDashboardState extends State<ScreenDashboard>
   @override
   dispose() {
     super.dispose();
+    _purchaseSubscription!.cancel();
     WidgetsBinding.instance.removeObserver(this);
   }
 
