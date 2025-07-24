@@ -2,7 +2,7 @@ import 'package:hive_flutter/adapters.dart';
 
 part 'databases.g.dart';
 
-@HiveType(typeId: 14)
+@HiveType(typeId: 14) //todo type id should be unique for each model
 class PurchaseDetailsSave extends HiveObject {
   @HiveField(1)
   dynamic purchaseID;
