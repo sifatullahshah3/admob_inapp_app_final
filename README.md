@@ -1,6 +1,6 @@
 # admob_inapp_app
 
-A new Flutter project.
+a project in a latest way with latest code for admob and inapp purchase and also handling both with proper and professional way
 
 ## Getting Started
 
